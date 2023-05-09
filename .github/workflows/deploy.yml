@@ -22,7 +22,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --bin crabtrics
+          cargo build --release --bin crabtrics
 
       - uses: actions/upload-artifact@v3
         with:
