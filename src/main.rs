@@ -196,7 +196,7 @@ struct EpisodeReport {
 }
 
 fn generate_report(db: &Database, export_dir: &Path) -> anyhow::Result<()> {
-    fs::create_dir(export_dir)?;
+    fs::create_dir_all(export_dir)?;
     let mut csv = csv::Writer::from_path(export_dir.join("downloads.csv"))?;
     csv.write_record(["date", "episode", "full", "partial"])?;
     for dl in PodcastDownloads::all(db).query()? {
