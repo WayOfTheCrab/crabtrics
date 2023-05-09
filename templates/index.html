@@ -1,0 +1,57 @@
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="darkreader-lock">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            background-color: #2A2D34;
+            color: #FFF;
+        }
+
+        table {
+            border: 1px solid #FFF;
+            padding: 0px;
+            border-collapse: collapse;
+        }
+
+        tbody:nth-child(2n + 1) {
+            background-color: #3A3D34;
+        }
+
+        th {
+            border-bottom: 1px solid #FFF;
+        }
+
+        td,
+        th {
+            border-right: 1px solid #FFF;
+            text-align: right;
+            padding: 5px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Downloads By Episode</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Downloads</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for episode in episode_downloads %}
+            <tr>
+                <td>{{ episode.number }}</td>
+                <td>{{ episode.downloads }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+
+</html>

@@ -1,0 +1,55 @@
+on: push
+name: Build Website
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Install Rust
+        uses: hecrj/setup-rust-action@v1
+
+      - name: Run clippy
+        run: |
+          cargo clippy --release
+
+      - name: Run unit tests
+        run: |
+          cargo test --all-targets --all-features --release
+
+      - name: Build
+        run: |
+          cargo build --bin crabtrics
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: crabtrics
+          path: target/release/crabtrics
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: wayofthecrab.com
+    needs: [build]
+    steps:
+      - uses: actions/download-artifact@v3
+
+      - name: Prepare SSH
+        run: |
+          mkdir ~/.ssh
+          chmod 0700 ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/*
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.KNOWN_HOSTS }}
+
+      - name: Deploy
+        run:
+          chmod a+x crabtrics
+          scp crabtrics wotc@box.wayofthecrab.com:
