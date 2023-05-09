@@ -50,6 +50,6 @@ jobs:
           KNOWN_HOSTS: ${{ secrets.KNOWN_HOSTS }}
 
       - name: Deploy
-        run:
+        run: |
           chmod a+x crabtrics
           scp crabtrics wotc@box.wayofthecrab.com:
