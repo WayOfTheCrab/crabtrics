@@ -1,5 +1,4 @@
 /target
 nginx/
 stage/
-reports/
 *.bonsaidb

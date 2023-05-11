@@ -3,66 +3,30 @@
 //! - Anonymous metrics over time
 //! - Count number of full downloads of the podcast
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, read_dir, File};
 use std::io::{BufReader, Read};
 use std::net::IpAddr;
 use std::path::Path;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use askama::Template;
-use bonsaidb::core::document::Emit;
 use bonsaidb::core::key::time::TimestampAsDays;
-use bonsaidb::core::key::Key;
-use bonsaidb::core::schema::{
-    Collection, CollectionViewSchema, Schema, SerializedCollection, SerializedView, View,
-};
+use bonsaidb::core::schema::{SerializedCollection, SerializedView};
 use bonsaidb::core::transaction::{Operation, Transaction};
 use bonsaidb::local::config::{Builder, StorageConfiguration};
 use bonsaidb::local::Database;
 use libflate::gzip::Decoder;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use time::OffsetDateTime;
 
 use crate::access_logs::LogReader;
+use crate::schema::{
+    CompleteDownloads, Crabtrics, DateEpisodeKey, DownloadsByDate, EpisodeDateKey, PodcastDownloads,
+};
 
 mod access_logs;
-
-#[derive(Schema, Debug)]
-#[schema(name = "crabtrics", collections = [PodcastDownloads])]
-pub struct Crabtrics;
-
-#[derive(Debug, Collection, Serialize, Deserialize)]
-#[collection(name = "podcast-downloads", primary_key = EpisodeDateKey, views = [CompleteDownloads])]
-pub struct PodcastDownloads {
-    pub full_downloads: u16,
-    pub partial_downloads: u16,
-}
-
-#[derive(Debug, View, Clone, Serialize, Deserialize)]
-#[view(name = "complete", key = u16, value = u32, collection = PodcastDownloads)]
-pub struct CompleteDownloads;
-
-impl CollectionViewSchema for CompleteDownloads {
-    type View = Self;
-
-    fn map(
-        &self,
-        document: bonsaidb::core::document::CollectionDocument<<Self::View as View>::Collection>,
-    ) -> bonsaidb::core::schema::ViewMapResult<'static, Self> {
-        document.header.emit_key_and_value(
-            document.header.id.episode,
-            document.contents.full_downloads as u32,
-        )
-    }
-
-    fn reduce(
-        &self,
-        mappings: &[bonsaidb::core::schema::ViewMappedValue<'_, Self>],
-        _rereduce: bool,
-    ) -> bonsaidb::core::schema::ReduceResult<Self::View> {
-        Ok(mappings.iter().map(|mapping| mapping.value).sum())
-    }
-}
+mod schema;
 
 fn main() -> anyhow::Result<()> {
     let (logs_path, episodes_path, reports_path) = if Path::new("stage").exists() {
@@ -128,12 +92,6 @@ use interner::global::{GlobalPool, GlobalString};
 
 static STRINGS: GlobalPool<String> = GlobalPool::new();
 
-#[derive(Debug, Hash, Copy, Clone, Eq, PartialEq, Key, Ord, PartialOrd)]
-pub struct EpisodeDateKey {
-    episode: u16,
-    date: TimestampAsDays,
-}
-
 #[derive(Debug, Default)]
 struct EpisodeDownloads {
     bytes_per_requestor: HashMap<IpAddr, HashMap<GlobalString, u32>>,
@@ -187,12 +145,19 @@ fn aggregate_logs<R: Read>(
 #[template(path = "index.html")]
 struct Report {
     episode_downloads: Vec<EpisodeReport>,
+    recent_downloads: BTreeMap<String, RecentDownloads>,
+    latest_episode: u16,
 }
 
 #[derive(Debug, Serialize)]
 struct EpisodeReport {
     number: u16,
     downloads: u32,
+}
+
+#[derive(Debug, Serialize, Default)]
+struct RecentDownloads {
+    episodes: BTreeMap<u16, u32>,
 }
 
 fn generate_report(db: &Database, export_dir: &Path) -> anyhow::Result<()> {
@@ -220,7 +185,36 @@ fn generate_report(db: &Database, export_dir: &Path) -> anyhow::Result<()> {
         });
     }
 
-    let rendered = Report { episode_downloads }.render()?;
+    let mut recent_downloads = BTreeMap::default();
+    let recent_start =
+        SystemTime::try_from(TimestampAsDays::now())? - Duration::from_secs(8 * 24 * 60 * 60);
+    let dl_query = DownloadsByDate::entries(db)
+        .with_key_range(DateEpisodeKey::range_starting_at(
+            TimestampAsDays::try_from(recent_start)?,
+        ))
+        .query()?;
+    // Gather all the episode numbers to ensure every entry is complete
+    let mut latest_episode = 0;
+    for mapping in dl_query {
+        latest_episode = latest_episode.max(mapping.key.episode);
+        let date = OffsetDateTime::from(SystemTime::try_from(mapping.key.date)?);
+        let for_date = recent_downloads
+            .entry(format!(
+                "{:04}-{:02}-{:02}",
+                date.year(),
+                date.month(),
+                date.day()
+            ))
+            .or_insert_with(RecentDownloads::default);
+        for_date.episodes.insert(mapping.key.episode, mapping.value);
+    }
+
+    let rendered = Report {
+        episode_downloads,
+        recent_downloads,
+        latest_episode,
+    }
+    .render()?;
     fs::write(export_dir.join("index.html"), rendered.as_bytes())?;
     Ok(())
 }

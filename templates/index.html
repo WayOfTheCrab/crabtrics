@@ -34,7 +34,6 @@
 </head>
 
 <body>
-
     <h2>Downloads By Episode</h2>
     <table>
         <thead>
@@ -48,6 +47,27 @@
             <tr>
                 <td>{{ episode.number }}</td>
                 <td>{{ episode.downloads }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <h2>Downloads By Date</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                {% for date in recent_downloads %}
+                <th>{{ date.0 }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for episode in (1..=latest_episode).rev() %}
+            <tr>
+                <td>{{ episode }}</td>
+                {% for date in recent_downloads %}
+                <td>{{ date.1.episodes.get(episode).copied().unwrap_or_default() }}</td>
+                {% endfor %}
             </tr>
             {% endfor %}
         </tbody>
