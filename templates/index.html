@@ -16,17 +16,13 @@
             border-collapse: collapse;
         }
 
-        tbody:nth-child(2n + 1) {
-            background-color: #3A3D34;
-        }
-
-        th {
-            border-bottom: 1px solid #FFF;
+        tr:nth-child(even) {
+            background-color: #3A3D44;
         }
 
         td,
         th {
-            border-right: 1px solid #FFF;
+            border: 1px solid #FFF;
             text-align: right;
             padding: 5px;
         }
@@ -39,35 +35,20 @@
         <thead>
             <tr>
                 <th>#</th>
-                <th>Downloads</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for episode in episode_downloads %}
-            <tr>
-                <td>{{ episode.number }}</td>
-                <td>{{ episode.downloads }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    <h2>Downloads By Date</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>#</th>
                 {% for date in recent_downloads %}
                 <th>{{ date.0 }}</th>
                 {% endfor %}
+                <th>Total Listens</th>
             </tr>
         </thead>
         <tbody>
-            {% for episode in (1..=latest_episode).rev() %}
+            {% for episode in episode_downloads.iter().rev() %}
             <tr>
-                <td>{{ episode }}</td>
+                <td>{{ episode.number }}</td>
                 {% for date in recent_downloads %}
-                <td>{{ date.1.episodes.get(episode).copied().unwrap_or_default() }}</td>
+                <td>{{ date.1.episodes.get(episode.number).copied().unwrap_or_default() }}</td>
                 {% endfor %}
+                <td>{{ episode.downloads }}</td>
             </tr>
             {% endfor %}
         </tbody>

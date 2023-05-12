@@ -202,7 +202,7 @@ fn generate_report(db: &Database, export_dir: &Path) -> anyhow::Result<()> {
             .entry(format!(
                 "{:04}-{:02}-{:02}",
                 date.year(),
-                date.month(),
+                date.month() as u8,
                 date.day()
             ))
             .or_insert_with(RecentDownloads::default);
