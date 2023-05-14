@@ -9,8 +9,11 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Rust
-        uses: hecrj/setup-rust-action@v1
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Run clippy
         run: |
