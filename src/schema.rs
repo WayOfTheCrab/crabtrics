@@ -3,7 +3,7 @@ use std::ops::RangeFrom;
 use bonsaidb::core::document::Emit;
 use bonsaidb::core::key::time::TimestampAsDays;
 use bonsaidb::core::key::Key;
-use bonsaidb::core::schema::{Collection, CollectionViewSchema, Schema, View};
+use bonsaidb::core::schema::{Collection, CollectionMapReduce, Schema, View, ViewSchema};
 use serde::{Deserialize, Serialize};
 
 #[derive(Schema, Debug)]
@@ -17,17 +17,15 @@ pub struct PodcastDownloads {
     pub partial_downloads: u16,
 }
 
-#[derive(Debug, View, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, View, ViewSchema, Serialize, Deserialize)]
 #[view(name = "complete", key = u16, value = u32, collection = PodcastDownloads)]
 pub struct CompleteDownloads;
 
-impl CollectionViewSchema for CompleteDownloads {
-    type View = Self;
-
-    fn map(
+impl CollectionMapReduce for CompleteDownloads {
+    fn map<'doc>(
         &self,
         document: bonsaidb::core::document::CollectionDocument<<Self::View as View>::Collection>,
-    ) -> bonsaidb::core::schema::ViewMapResult<'static, Self> {
+    ) -> bonsaidb::core::schema::ViewMapResult<'doc, Self> {
         document.header.emit_key_and_value(
             document.header.id.episode,
             document.contents.full_downloads as u32,
@@ -64,17 +62,15 @@ impl DateEpisodeKey {
     }
 }
 
-#[derive(Debug, Clone, View)]
+#[derive(Debug, Clone, View, ViewSchema)]
 #[view(name = "by-date", collection = PodcastDownloads, key = DateEpisodeKey, value = u32)]
 pub struct DownloadsByDate;
 
-impl CollectionViewSchema for DownloadsByDate {
-    type View = Self;
-
-    fn map(
+impl CollectionMapReduce for DownloadsByDate {
+    fn map<'doc>(
         &self,
         document: bonsaidb::core::document::CollectionDocument<<Self::View as View>::Collection>,
-    ) -> bonsaidb::core::schema::ViewMapResult<'static, Self> {
+    ) -> bonsaidb::core::schema::ViewMapResult<'doc, Self> {
         document.header.emit_key_and_value(
             DateEpisodeKey {
                 date: document.header.id.date,
