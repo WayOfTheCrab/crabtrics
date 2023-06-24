@@ -3,12 +3,11 @@ name = "crabtrics"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = { version = "1.0.71", features = ["backtrace"] }
 httparse = "1.8.0"
-time = { version = "0.3.22", features = ["parsing"] }
+anyhow = { version = "1.0.71", features = ["backtrace"] }
+time = { version = "0.3.22", features = ["parsing", "serde"] }
 bonsaidb = { git = "https://github.com/khonsulabs/bonsaidb/", branch = "main", features = [
     "local",
 ] }

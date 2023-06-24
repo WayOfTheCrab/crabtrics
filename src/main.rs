@@ -11,14 +11,16 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use askama::Template;
+use bonsaidb::core::connection::Connection;
 use bonsaidb::core::key::time::TimestampAsDays;
 use bonsaidb::core::schema::{SerializedCollection, SerializedView};
 use bonsaidb::core::transaction::{Operation, Transaction};
 use bonsaidb::local::config::{Builder, StorageConfiguration};
 use bonsaidb::local::Database;
+use interner::global::{GlobalPool, GlobalString};
 use libflate::gzip::Decoder;
 use serde::Serialize;
-use time::OffsetDateTime;
+use time::{OffsetDateTime, Time};
 
 use crate::access_logs::LogReader;
 use crate::schema::{
@@ -29,6 +31,12 @@ mod access_logs;
 mod schema;
 
 fn main() -> anyhow::Result<()> {
+    let db = Database::open::<Crabtrics>(StorageConfiguration::new("crabtrics.bonsaidb"))?;
+    let days_back: i64 = std::env::var("IMPORT_DAYS")
+        .ok()
+        .and_then(|days| days.parse().ok())
+        .unwrap_or(14);
+
     let (logs_path, episodes_path, reports_path) = if Path::new("stage").exists() {
         (
             Path::new("stage/nginx"),
@@ -44,6 +52,8 @@ fn main() -> anyhow::Result<()> {
     };
 
     let mut aggregation = HashMap::new();
+    let threshold =
+        OffsetDateTime::now_utc().replace_time(Time::MIDNIGHT) - time::Duration::days(days_back);
     for entry in read_dir(logs_path)? {
         let Ok(entry) = entry else { continue };
         let file_name = entry.file_name();
@@ -53,14 +63,18 @@ fn main() -> anyhow::Result<()> {
             let file = BufReader::new(File::open(&entry.path())?);
 
             if file_name.ends_with(".gz") {
-                aggregate_logs(Decoder::new(file)?, &mut aggregation, episodes_path)?;
+                aggregate_logs(
+                    Decoder::new(file)?,
+                    &mut aggregation,
+                    episodes_path,
+                    threshold,
+                )?;
             } else {
-                aggregate_logs(file, &mut aggregation, episodes_path)?;
+                aggregate_logs(file, &mut aggregation, episodes_path, threshold)?;
             }
         }
     }
 
-    let db = Database::open::<Crabtrics>(StorageConfiguration::new("crabtrics.bonsaidb"))?;
     let mut tx = Transaction::new();
     for (key, info) in aggregation {
         let mut partial_downloads = 0;
@@ -84,11 +98,10 @@ fn main() -> anyhow::Result<()> {
         )?);
     }
     tx.apply(&db)?;
+    db.compact()?;
 
     generate_report(&db, reports_path)
 }
-
-use interner::global::{GlobalPool, GlobalString};
 
 static STRINGS: GlobalPool<String> = GlobalPool::new();
 
@@ -102,6 +115,7 @@ fn aggregate_logs<R: Read>(
     source: R,
     aggregation: &mut HashMap<EpisodeDateKey, EpisodeDownloads>,
     episodes_path: &Path,
+    threshold: OffsetDateTime,
 ) -> anyhow::Result<()> {
     let mut logs = LogReader::new(source);
     while let Some(log) = logs.read_one()? {
@@ -109,10 +123,17 @@ fn aggregate_logs<R: Read>(
         if log.response_code < 200 || log.response_code > 299 || log.method != "GET" {
             continue;
         }
+        if log.time < threshold {
+            continue;
+        }
+        // Filter old logs we've already aggreg
         // Find files matching /episode-{number}.{extension}.
-        let Some(file) = log.path.strip_prefix("/episode-") else { continue };
+        let Some(file) = log.path.strip_prefix("/episode-").or_else(|| log.path.strip_prefix("/way_of_the_crab_")) else { continue };
         let Some((episode, extension)) = file.split_once('.') else { continue };
         assert_eq!(extension, "m4a", "need to support counting sizes by type");
+        let episode = episode
+            .split_once('_')
+            .map_or(episode, |(episode, _)| episode);
         let Ok(episode): Result<u16, _> = episode.parse() else { continue };
 
         let episode_downloads = aggregation
@@ -164,6 +185,7 @@ fn generate_report(db: &Database, export_dir: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(export_dir)?;
     let mut csv = csv::Writer::from_path(export_dir.join("downloads.csv"))?;
     csv.write_record(["date", "episode", "full", "partial"])?;
+    let mut manual_aggregation = HashMap::new();
     for dl in PodcastDownloads::all(db).query()? {
         let date = time::OffsetDateTime::from(SystemTime::try_from(dl.header.id.date)?);
         let date = format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day());
@@ -173,6 +195,7 @@ fn generate_report(db: &Database, export_dir: &Path) -> anyhow::Result<()> {
             &dl.contents.full_downloads.to_string(),
             &dl.contents.partial_downloads.to_string(),
         ])?;
+        *manual_aggregation.entry(dl.header.id.episode).or_insert(0) += dl.contents.full_downloads;
     }
     csv.flush()?;
     drop(csv);
