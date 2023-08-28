@@ -57,7 +57,9 @@ fn main() -> anyhow::Result<()> {
     for entry in read_dir(logs_path)? {
         let Ok(entry) = entry else { continue };
         let file_name = entry.file_name();
-        let Some(file_name) = file_name.to_str() else { continue };
+        let Some(file_name) = file_name.to_str() else {
+            continue;
+        };
         if file_name.starts_with("access.log") {
             println!("Importing {file_name}");
             let file = BufReader::new(File::open(&entry.path())?);
@@ -128,13 +130,23 @@ fn aggregate_logs<R: Read>(
         }
         // Filter old logs we've already aggreg
         // Find files matching /episode-{number}.{extension}.
-        let Some(file) = log.path.strip_prefix("/episode-").or_else(|| log.path.strip_prefix("/way_of_the_crab_")) else { continue };
-        let Some((episode, extension)) = file.split_once('.') else { continue };
+        let Some(file) = log
+            .path
+            .strip_prefix("/episode-")
+            .or_else(|| log.path.strip_prefix("/way_of_the_crab_"))
+        else {
+            continue;
+        };
+        let Some((episode, extension)) = file.split_once('.') else {
+            continue;
+        };
         assert_eq!(extension, "m4a", "need to support counting sizes by type");
         let episode = episode
-            .split_once('_')
+            .split_once(['_', '-'])
             .map_or(episode, |(episode, _)| episode);
-        let Ok(episode): Result<u16, _> = episode.parse() else { continue };
+        let Ok(episode): Result<u16, _> = episode.parse() else {
+            continue;
+        };
 
         let episode_downloads = aggregation
             .entry(EpisodeDateKey {
